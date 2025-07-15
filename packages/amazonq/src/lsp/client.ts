@@ -67,6 +67,7 @@ import { LineTracker } from '../app/inline/stateTracker/lineTracker'
 import { InlineChatTutorialAnnotation } from '../app/inline/tutorials/inlineChatTutorialAnnotation'
 import { InlineTutorialAnnotation } from '../app/inline/tutorials/inlineTutorialAnnotation'
 import { InlineCompletionManager } from '../app/inline/completion'
+import { getMfaTokenFromUser } from '../../../core/dist/src/auth/credentials/utils'
 
 const localize = nls.loadMessageBundle()
 const logger = getLogger('amazonqLsp.lspClient')
@@ -346,11 +347,11 @@ async function postStartLanguageServer(
     )
 
     // Handler for when Flare needs to assume a role with MFA code
-    client.onRequest<GetMfaCodeParams, GetMfaCodeResult>(
+    client.onRequest(
         getMfaCodeRequestType.method,
         async (params: GetMfaCodeParams): Promise<GetMfaCodeResult> => {
-            const mfaCode = await vscode.window.showInputBox({ title: 'Enter MFA Code' })
-            return { code: mfaCode ?? '' }
+            const mfaCode = await getMfaTokenFromUser(params.mfaSerial, params.profileName)
+            return { code: mfaCode }
         }
     )
 
