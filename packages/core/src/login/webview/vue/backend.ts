@@ -321,11 +321,31 @@ export abstract class CommonAuthWebview extends VueWebview {
         return globals.globalState.tryGet('recentRoleArn', Object, { roleArn: '' })
     }
 
+    getDefaultMfaSerial(): { mfaSerial: string } {
+        return globals.globalState.tryGet('recentMfaSerial', Object, { mfaSerial: '' })
+    }
+
     cancelAuthFlow() {
         AuthSSOServer.lastInstance?.cancelCurrentFlow()
     }
 
     validateUrl(url: string) {
         return isValidUrl(url)
+    }
+
+    async handleMfaVerification(mfaSerial: string, mfaCode: string): Promise<void> {
+        // Store MFA serial in global state for later use
+        await globals.globalState.update('recentMfaSerial', { mfaSerial: mfaSerial })
+        await vscode.commands.executeCommand('aws.amazonq.submitMfaForm', mfaSerial, mfaCode)
+    }
+
+    onShowMfaForm(callback: () => void): void {
+        // Check if command already exists to prevent duplicate registration
+        void vscode.commands.getCommands(true).then((commands) => {
+            if (!commands.includes('aws.amazonq.showMfaForm')) {
+                const disposable = vscode.commands.registerCommand('aws.amazonq.showMfaForm', callback)
+                globals.context.subscriptions.push(disposable)
+            }
+        })
     }
 }

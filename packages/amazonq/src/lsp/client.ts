@@ -58,7 +58,7 @@ import { processUtils } from 'aws-core-vscode/shared'
 import { activate as activateChat } from './chat/activation'
 import { activate as activeInlineChat } from '../inlineChat/activation'
 import { AmazonQResourcePaths } from './lspInstaller'
-import { auth2, getMfaTokenFromUser } from 'aws-core-vscode/auth'
+import { auth2 } from 'aws-core-vscode/auth'
 import { ConfigSection, isValidConfigSection, pushConfigUpdate, toAmazonQLSPLogLevel } from './config'
 import { telemetry } from 'aws-core-vscode/telemetry'
 import { SessionManager } from '../app/inline/sessionManager'
@@ -343,8 +343,14 @@ async function postStartLanguageServer(
     client.onRequest(
         auth2.notificationTypes.getMfaCode.method,
         async (params: GetMfaCodeParams): Promise<GetMfaCodeResult> => {
-            const mfaCode = await getMfaTokenFromUser(params.mfaSerial, params.profileName)
-            return { code: mfaCode ?? '' }
+            if (params.mfaSerial) {
+                await globals.globalState.update('recentMfaSerial', { mfaSerial: params.mfaSerial })
+            }
+            // Notify login webview to show MFA form
+            await vscode.commands.executeCommand('aws.amazonq.showMfaForm')
+            // Wait for MFA serial from webview
+            const mfaData = await waitForMfaData()
+            return { code: mfaData.mfaCode ?? '', mfaSerial: mfaData.mfaSerial ?? '' }
         }
     )
 
@@ -405,7 +411,43 @@ async function postStartLanguageServer(
 
     await setupInline(extensionContext, client, toDispose)
 
+    interface MfaData {
+        mfaSerial: string | undefined
+        mfaCode: string | undefined
+    }
+
+    let mfaDataResolver: ((data: MfaData) => void) | undefined
+
+    async function waitForMfaData(): Promise<MfaData> {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(
+                () => {
+                    mfaDataResolver = undefined
+                    reject(new Error('MFA timeout: No MFA code provided within 5 minutes'))
+                },
+                5 * 60 * 1000
+            ) // 5 minutes timeout
+
+            mfaDataResolver = (data: MfaData) => {
+                clearTimeout(timeout)
+                resolve(data)
+            }
+        })
+    }
+
     toDispose.push(
+        vscode.commands.registerCommand('aws.amazonq.showMfaForm', () => {
+            // This will be handled by the webview
+        }),
+        vscode.commands.registerCommand('aws.amazonq.submitMfaForm', (mfaSerial: string, mfaCode: string) => {
+            if (mfaDataResolver) {
+                mfaDataResolver({
+                    mfaSerial: mfaSerial,
+                    mfaCode: mfaCode,
+                })
+                mfaDataResolver = undefined
+            }
+        }),
         AuthUtil.instance.regionProfileManager.onDidChangeRegionProfile(sendProfileToLsp),
         vscode.commands.registerCommand('aws.amazonq.getWorkspaceId', async () => {
             const requestType = new RequestType<GetConfigurationFromServerParams, ResponseMessage, Error>(

@@ -261,7 +261,7 @@
                     @keydown.enter="handleContinueClick()"
                 />
             </div>
-            <div class="title">Access Key</div>
+            <div class="title">Access key ID</div>
             <input
                 class="iamInput bottomMargin"
                 type="text"
@@ -270,7 +270,7 @@
                 v-model="accessKey"
                 @keydown.enter="handleContinueClick()"
             />
-            <div class="title">Secret Key</div>
+            <div class="title">Secret Access Key</div>
             <input
                 class="iamInput bottomMargin"
                 type="password"
@@ -303,6 +303,39 @@
                 Continue
             </button>
         </template>
+
+        <template v-if="stage === 'MFA_FORM'">
+            <button class="back-button bottomMargin" @click="handleBackButtonClick">
+                <svg width="13" height="11" viewBox="0 0 13 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M4.98667 0.0933332L5.73333 0.786666L1.57333 4.94667H12.0267V5.96H1.57333L5.73333 10.0667L4.98667 10.8133L0.0266666 5.8V5.10667L4.98667 0.0933332Z"
+                        fill="#21A2FF"
+                    />
+                </svg>
+            </button>
+            <div class="header">MFA Verification:</div>
+            <div class="title">MFA Serial Number</div>
+            <input
+                class="iamInput bottomMargin"
+                type="text"
+                id="mfaSerial"
+                name="mfaSerial"
+                v-model="mfaSerial"
+                @keydown.enter="handleContinueClick()"
+            />
+            <div class="title">MFA Code</div>
+            <input
+                class="iamInput bottomMargin"
+                type="text"
+                id="mfaCode"
+                name="mfaCode"
+                v-model="mfaCode"
+                @keydown.enter="handleContinueClick()"
+            />
+            <button class="continue-button" :disabled="shouldDisableMfaContinue()" v-on:click="handleContinueClick()">
+                Continue
+            </button>
+        </template>
     </div>
 </template>
 <script lang="ts">
@@ -317,7 +350,7 @@ import { ssoUrlFormatRegex, ssoUrlFormatMessage, urlInvalidFormatMessage } from 
 const client = WebviewClientFactory.create<CommonAuthWebview>()
 
 /** Where the user is currently in the builder id setup process */
-type Stage = 'START' | 'SSO_FORM' | 'CONNECTED' | 'AUTHENTICATING' | 'AWS_PROFILE'
+type Stage = 'START' | 'SSO_FORM' | 'CONNECTED' | 'AUTHENTICATING' | 'AWS_PROFILE' | 'MFA_FORM'
 
 function getCredentialId(loginOption: LoginOption) {
     switch (loginOption) {
@@ -389,6 +422,8 @@ export default defineComponent({
             secretKey: '',
             sessionToken: '',
             roleArn: '',
+            mfaSerial: '',
+            mfaCode: '',
         }
     },
     async created() {
@@ -397,8 +432,10 @@ export default defineComponent({
         this.selectedRegion = defaultSso.region
         const defaultIamAccessKey = await this.getDefaultIamAccessKey()
         const defaultRoleArn = await this.getDefaultRoleArn()
+        const defaultMfaSerial = await this.getDefaultMfaSerial()
         this.accessKey = defaultIamAccessKey.accessKey
         this.roleArn = defaultRoleArn.roleArn
+        this.mfaSerial = defaultMfaSerial.mfaSerial
         await this.emitUpdate('created')
     },
 
@@ -414,6 +451,12 @@ export default defineComponent({
         // Pre-select the first available login option
         await this.preselectLoginOption()
         await this.handleUrlInput() // validate the default startUrl
+
+        // Listen for MFA form show command
+        client.onShowMfaForm(() => {
+            client.errorNotification({ text: 'show MFA Form', id: 'mfa' })
+            this.stage = 'MFA_FORM'
+        })
     },
     methods: {
         toggleItemSelection(itemId: number) {
@@ -549,6 +592,12 @@ export default defineComponent({
                 } else {
                     this.stage = 'CONNECTED'
                 }
+            } else if (this.stage === 'MFA_FORM') {
+                if (this.shouldDisableMfaContinue()) {
+                    return
+                }
+                await client.handleMfaVerification(this.mfaSerial, this.mfaCode)
+                this.stage = 'AUTHENTICATING'
             }
             void client.emitUiClick('auth_continueButton')
         },
@@ -658,6 +707,9 @@ export default defineComponent({
         async getDefaultRoleArn() {
             return await client.getDefaultRoleArn()
         },
+        async getDefaultMfaSerial() {
+            return await client.getDefaultMfaSerial()
+        },
         handleHelpLinkClick() {
             void client.emitUiClick('auth_helpLink')
         },
@@ -681,6 +733,9 @@ export default defineComponent({
             } else {
                 return this.accessKey.length <= 0 || this.secretKey.length <= 0
             }
+        },
+        shouldDisableMfaContinue() {
+            return this.mfaSerial.length <= 0 || this.mfaCode.length <= 0
         },
     },
 })
