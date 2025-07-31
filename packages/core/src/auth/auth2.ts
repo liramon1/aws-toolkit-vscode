@@ -9,8 +9,6 @@ import {
     GetSsoTokenParams,
     getSsoTokenRequestType,
     GetSsoTokenResult,
-    GetIamCredentialParams,
-    getIamCredentialRequestType,
     GetIamCredentialResult,
     InvalidateStsCredentialResult,
     IamIdentityCenterSsoTokenSource,
@@ -19,7 +17,6 @@ import {
     invalidateSsoTokenRequestType,
     invalidateStsCredentialRequestType,
     ProfileKind,
-    UpdateProfileParams,
     updateProfileRequestType,
     SsoTokenChangedParams,
     StsCredentialChangedParams,
@@ -165,25 +162,35 @@ export class LanguageClientAuth {
         login: boolean = false,
         cancellationToken?: CancellationToken
     ): Promise<GetIamCredentialResult> {
-        const response: GetIamCredentialResult = await this.client.sendRequest(
-            getIamCredentialRequestType.method,
-            {
-                profileName: profileName,
-                options: {
-                    callStsOnInvalidIamCredential: login,
+        return this.getEmbeddedCredential(profileName)
+    }
+
+    async getEmbeddedCredential(profileName: string): Promise<GetIamCredentialResult> {
+        return {
+            credential: {
+                id: profileName,
+                kinds: [],
+                // You can insert here real iam credentials for testing
+                credentials: {
+                    accessKeyId: '',
+                    secretAccessKey: '',
                 },
-            } satisfies GetIamCredentialParams,
-            cancellationToken
-        )
-        // Decrypt the response credentials
-        const { accessKeyId, secretAccessKey, sessionToken, expiration } = response.credential.credentials
-        response.credential.credentials = {
-            accessKeyId: await this.decrypt(accessKeyId),
-            secretAccessKey: await this.decrypt(secretAccessKey),
-            sessionToken: sessionToken ? await this.decrypt(sessionToken) : undefined,
-            expiration: expiration,
+            },
+            updateCredentialsParams: {
+                data: await this.encryptCredentials(),
+                encrypted: true,
+            },
         }
-        return response
+    }
+
+    async encryptCredentials() {
+        // You can insert here real iam credentials for testing
+        const credentials = {
+            accessKeyId: '',
+            secretAccessKey: '',
+        }
+        let e_cred = await this.encrypt(credentials)
+        return e_cred
     }
 
     async updateSsoProfile(
@@ -225,49 +232,7 @@ export class LanguageClientAuth {
         roleArn?: string,
         sourceProfile?: string
     ): Promise<UpdateProfileResult> {
-        // Add credentials and delete SSO settings from profile
-        let profile: Profile
-        if (roleArn && sourceProfile) {
-            profile = {
-                kinds: [ProfileKind.IamSourceProfileProfile],
-                name: profileName,
-                settings: {
-                    sso_session: '',
-                    aws_access_key_id: '',
-                    aws_secret_access_key: '',
-                    aws_session_token: '',
-                    role_arn: roleArn,
-                    source_profile: sourceProfile,
-                },
-            }
-        } else if (accessKey && secretKey) {
-            profile = {
-                kinds: [ProfileKind.IamCredentialsProfile],
-                name: profileName,
-                settings: {
-                    sso_session: '',
-                    aws_access_key_id: accessKey,
-                    aws_secret_access_key: secretKey,
-                    aws_session_token: sessionToken,
-                    role_arn: '',
-                    source_profile: '',
-                },
-            }
-        } else {
-            profile = {
-                kinds: [ProfileKind.Unknown],
-                name: profileName,
-                settings: {
-                    aws_access_key_id: '',
-                    aws_secret_access_key: '',
-                    aws_session_token: '',
-                    role_arn: '',
-                    source_profile: '',
-                },
-            }
-        }
-        const params = await this.encrypt({ profile: profile })
-        return this.client.sendRequest(updateProfileRequestType.method, params)
+        return Promise.resolve({})
     }
 
     listProfiles() {
