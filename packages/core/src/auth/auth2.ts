@@ -189,7 +189,7 @@ export class LanguageClientAuth {
             accessKeyId: '',
             secretAccessKey: '',
         }
-        let e_cred = await this.encrypt(credentials)
+        let e_cred = await this.encrypt({ data: credentials })
         return e_cred
     }
 
@@ -235,8 +235,9 @@ export class LanguageClientAuth {
         return Promise.resolve({})
     }
 
-    listProfiles() {
-        return this.client.sendRequest(listProfilesRequestType.method, {}) as Promise<ListProfilesResult>
+    async listProfiles() {
+        const response: string = await this.client.sendRequest(listProfilesRequestType.method, {})
+        return await this.decrypt<ListProfilesResult>(response)
     }
 
     /**
